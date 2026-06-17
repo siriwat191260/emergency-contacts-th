@@ -15,88 +15,69 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
   }
 
-  // Map type to Google Places includedTypes
+  // Places API เก่า — Nearby Search
+  // type map
   const typeMap: Record<string, string[]> = {
-    all:      ['hospital', 'police', 'fire_station', 'pharmacy', 'clinic'],
-    hospital: ['hospital', 'pharmacy', 'clinic'],
+    all:      ['hospital', 'police', 'fire_station'],
+    hospital: ['hospital'],
     police:   ['police'],
     fire:     ['fire_station'],
   }
-  const includedTypes = typeMap[type] || typeMap['all']
+  const types = typeMap[type] || typeMap['all']
 
   try {
-    // Google Places API (New) — Nearby Search
-    const res = await fetch(
-      'https://places.googleapis.com/v1/places:searchNearby',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': key,
-          'X-Goog-FieldMask': [
-            'places.id',
-            'places.displayName',
-            'places.formattedAddress',
-            'places.location',
-            'places.nationalPhoneNumber',
-            'places.types',
-            'places.rating',
-            'places.businessStatus',
-          ].join(','),
-        },
-        body: JSON.stringify({
-          includedTypes,
-          maxResultCount: 20,
-          locationRestriction: {
-            circle: {
-              center: { latitude: parseFloat(lat), longitude: parseFloat(lng) },
-              radius: 5000.0,
-            },
-          },
-          languageCode: 'th',
-        }),
-      }
+    // เรียกทีละ type แล้ว merge กัน (Places API เก่าส่งได้ทีละ type)
+    const results = await Promise.all(
+      types.map(t =>
+        fetch(
+          `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
+          new URLSearchParams({
+            location: `${lat},${lng}`,
+            radius: '5000',
+            type: t,
+            language: 'th',
+            key,
+          })
+        ).then(r => r.json())
+      )
     )
 
-    if (!res.ok) {
-      const err = await res.text()
-      console.error('Places API error:', err)
-      return NextResponse.json({ error: 'Places API error', detail: err }, { status: res.status })
-    }
+    // Merge + deduplicate by place_id
+    const seen = new Set<string>()
+    const places = results
+      .flatMap(r => r.results || [])
+      .filter((p: any) => {
+        if (seen.has(p.place_id)) return false
+        seen.add(p.place_id)
+        return true
+      })
+      .map((p: any) => {
+        const types: string[] = p.types || []
+        let placeType: 'hospital' | 'police' | 'fire' = 'hospital'
+        let icon = '🏥'
+        let label = 'โรงพยาบาล'
 
-    const data = await res.json()
-    const places = (data.places || []).map((p: any) => {
-      const types: string[] = p.types || []
-      let placeType: 'hospital' | 'police' | 'fire' = 'hospital'
-      let icon = '🏥'
-      let label = 'โรงพยาบาล'
+        if (types.includes('police')) {
+          placeType = 'police'; icon = '👮'; label = 'สถานีตำรวจ'
+        } else if (types.includes('fire_station')) {
+          placeType = 'fire'; icon = '🚒'; label = 'สถานีดับเพลิง'
+        }
 
-      if (types.includes('police')) {
-        placeType = 'police'; icon = '👮'; label = 'สถานีตำรวจ'
-      } else if (types.includes('fire_station')) {
-        placeType = 'fire'; icon = '🚒'; label = 'สถานีดับเพลิง'
-      } else if (types.includes('pharmacy')) {
-        label = 'ร้านขายยา'
-      } else if (types.includes('clinic')) {
-        label = 'คลินิก'
-      }
+        return {
+          id:     p.place_id,
+          name:   p.name || label,
+          addr:   p.vicinity || '',
+          phone:  null, // Places API เก่า ต้อง call Place Details แยก
+          lat:    p.geometry?.location?.lat || 0,
+          lng:    p.geometry?.location?.lng || 0,
+          type:   placeType,
+          icon,
+          label,
+          rating: p.rating || null,
+          open:   p.opening_hours?.open_now ?? true,
+        }
+      })
 
-      return {
-        id:    p.id,
-        name:  p.displayName?.text || label,
-        addr:  p.formattedAddress || '',
-        phone: p.nationalPhoneNumber || null,
-        lat:   p.location?.latitude || 0,
-        lng:   p.location?.longitude || 0,
-        type:  placeType,
-        icon,
-        label,
-        rating: p.rating || null,
-        open:   p.businessStatus === 'OPERATIONAL',
-      }
-    })
-
-    // Cache 5 minutes
     return NextResponse.json({ places }, {
       headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate' }
     })
