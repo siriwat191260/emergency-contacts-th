@@ -158,7 +158,7 @@ export default function NearbyScreen() {
         else if (err.code === 2) setError('ไม่พบสัญญาณ GPS — ลองในที่โล่ง')
         else setError('หมดเวลา — กดลองใหม่')
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 0 }
     )
   }
 
