@@ -1,0 +1,12 @@
+# env — ห้าม commit เด็ดขาด
+.env.local
+.env
+
+# Next.js
+.next/
+out/
+node_modules/
+
+# misc
+.DS_Store
+*.log
