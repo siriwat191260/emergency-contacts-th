@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
           `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
           new URLSearchParams({
             location: `${lat},${lng}`,
-            radius: '5000',
+            radius: '10000',
             type: t,
             language: 'th',
             key,
@@ -41,6 +41,12 @@ export async function GET(req: NextRequest) {
         ).then(r => r.json())
       )
     )
+
+    // Debug log
+    results.forEach((r, i) => {
+      console.log(`[nearby] type=${types[i]} status=${r.status} count=${r.results?.length ?? 0}`)
+      if (r.error_message) console.log(`[nearby] error_message=${r.error_message}`)
+    })
 
     // Merge + deduplicate by place_id
     const seen = new Set<string>()
