@@ -812,32 +812,78 @@ function clearRecent() { recentCalls=[]; localStorage.removeItem('recentCalls');
 let uLat=null, uLng=null, nearbyData=[], activeType='all';
 
 function startLocate() {
-  const btn=document.getElementById('locateBtn');
-  btn.disabled=true; btn.innerHTML='<div class="spinner" style="width:20px;height:20px;margin:0"></div> กำลังหาตำแหน่ง…';
+  // iOS Safari: ต้องเรียก getCurrentPosition ตรงๆ ใน onclick
+  // ห้ามผ่าน async/await หรือ .then() ใดๆ ก่อน — จะทำให้ popup ไม่ขึ้น
+  if (!navigator.geolocation) {
+    showGpsError('อุปกรณ์ไม่รองรับ GPS', false);
+    return;
+  }
+
+  const btn = document.getElementById('locateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div style="width:20px;height:20px;border:2.5px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div> กำลังขอสิทธิ์ GPS…';
   document.getElementById('locBadge').classList.add('show');
-  document.getElementById('locText').textContent='กำลังรับสัญญาณ GPS…';
-  if (!navigator.geolocation) { locErr('อุปกรณ์ไม่รองรับ GPS'); return; }
+  document.getElementById('locText').textContent = 'รอ popup อนุญาตตำแหน่ง…';
+  document.getElementById('locAcc').textContent = '';
+
   navigator.geolocation.getCurrentPosition(
     onPos,
-    e => locErr({1:'กรุณาอนุญาตตำแหน่ง',2:'ไม่พบสัญญาณ GPS',3:'หมดเวลา ลองใหม่'}[e.code]||'ไม่สามารถรับตำแหน่งได้'),
-    { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+    onPosError,
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
   );
 }
-function locErr(msg) {
-  const btn=document.getElementById('locateBtn');
-  btn.disabled=false; btn.innerHTML='📍 ค้นหาจากตำแหน่งปัจจุบัน';
-  document.getElementById('locText').textContent=msg;
-  showToast('❌ '+msg);
+
+function onPosError(err) {
+  const msgs = {
+    1: { text: 'กรุณาอนุญาต GPS ในเบราว์เซอร์', needsSettings: true },
+    2: { text: 'ไม่พบสัญญาณ GPS — ลองในที่โล่ง', needsSettings: false },
+    3: { text: 'หมดเวลา — กดลองใหม่อีกครั้ง', needsSettings: false },
+  };
+  const m = msgs[err.code] || { text: 'ไม่สามารถรับตำแหน่งได้', needsSettings: false };
+  showGpsError(m.text, m.needsSettings);
 }
+
+function showGpsError(msg, showSettingsHint) {
+  const btn = document.getElementById('locateBtn');
+  btn.disabled = false;
+  btn.innerHTML = '📍 ค้นหาจากตำแหน่งปัจจุบัน';
+  document.getElementById('locText').textContent = msg;
+  document.getElementById('locAcc').textContent = '⚠️';
+
+  // แสดง hint วิธีเปิดใน Settings
+  if (showSettingsHint) {
+    document.getElementById('nearbyList').innerHTML = `
+      <div class="state-box">
+        <div class="icon">🔒</div>
+        <h3>GPS ถูกปฏิเสธ</h3>
+        <p>กรุณาเปิดสิทธิ์ตำแหน่งใน<br><strong>Settings</strong> ของเบราว์เซอร์</p>
+        <div style="margin-top:16px;background:#EDE9FB;border-radius:16px;padding:14px 16px;text-align:left;font-size:13px;color:#3C2789;line-height:1.8">
+          📱 <strong>iPhone Safari:</strong><br>
+          Settings → Safari → Location → Allow<br><br>
+          🤖 <strong>Android Chrome:</strong><br>
+          กดไอคอนล็อค URL → Permissions → Location → Allow
+        </div>
+        <button class="retry-btn" style="margin-top:14px" onclick="doGetPosition()">ลองใหม่</button>
+      </div>`;
+  } else {
+    showToast('❌ ' + msg);
+  }
+}
+
 function onPos(pos) {
-  uLat=pos.coords.latitude; uLng=pos.coords.longitude;
-  document.getElementById('locText').textContent=`${uLat.toFixed(5)}, ${uLng.toFixed(5)}`;
-  document.getElementById('locAcc').textContent=`±${Math.round(pos.coords.accuracy)}m`;
-  document.getElementById('locateBtn').disabled=false;
-  document.getElementById('locateBtn').innerHTML='📍 อัปเดตตำแหน่ง';
+  uLat = pos.coords.latitude;
+  uLng = pos.coords.longitude;
+  const acc = Math.round(pos.coords.accuracy);
+
+  document.getElementById('locText').textContent = `${uLat.toFixed(5)}, ${uLng.toFixed(5)}`;
+  document.getElementById('locAcc').textContent = `±${acc}m`;
+  document.getElementById('locateBtn').disabled = false;
+  document.getElementById('locateBtn').innerHTML = '✅ อัปเดตตำแหน่ง';
   document.getElementById('filterRow').classList.add('show');
-  document.getElementById('gpsStatusTxt').textContent='อนุญาตแล้ว';
-  document.getElementById('gpsStatusIcon').textContent='✓';
+  document.getElementById('gpsStatusTxt').textContent = `อนุญาตแล้ว (±${acc}m)`;
+  document.getElementById('gpsStatusIcon').textContent = '✓';
+
+  showToast('📍 ได้รับตำแหน่งแล้ว ±' + acc + 'm');
   fetchNearby(uLat, uLng);
 }
 function fetchNearby(lat, lng) {
@@ -938,4 +984,5 @@ if ('serviceWorker' in navigator) {
 </script>
 
 
-</body></html>
+</body>
+</html>
