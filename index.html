@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>เบอร์ฉุกเฉินไทย</title>
+
+<!-- PWA -->
+<meta name="theme-color" content="#6B50D8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ฉุกเฉิน">
+<meta name="description" content="รวมเบอร์ฉุกเฉินไทย พร้อมค้นหาโรงพยาบาลใกล้บ้าน">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  background: #F3F2FA;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 28px 16px 48px;
+}
+.page-header { text-align: center; margin-bottom: 20px; }
+.page-header h1 { font-size: 22px; font-weight: 700; color: #220D5C; letter-spacing: -0.5px; }
+.page-header p { font-size: 13px; color: #8B72E8; margin-top: 3px; }
+
+/* ── Config Banner ── */
+.config-banner {
+  width: 340px; margin-bottom: 16px;
+  background: #FFF3CD; border: 1px solid #FBBF24;
+  border-radius: 12px; padding: 10px 14px;
+  font-size: 13px; color: #92400E; line-height: 1.5;
+  display: none;
+}
+.config-banner.show { display: block; }
+.config-banner a { color: #6B50D8; font-weight: 600; }
+
+/* ── Realtime pill ── */
+.rt-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #EDE9FB; border-radius: 20px;
+  padding: 3px 10px; font-size: 11px; font-weight: 600; color: #6B50D8;
+  margin-bottom: 16px;
+}
+.rt-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #C2BAE8;
+  transition: background 0.3s;
+}
+.rt-dot.live { background: #34C759; animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Phone frame ── */
+.frame-outer {
+  width: 340px; background: #1a1a1e; border-radius: 50px; padding: 13px;
+  box-shadow: 0 32px 80px rgba(107,80,216,0.18), 0 0 0 1px rgba(255,255,255,0.06);
+}
+.frame-inner {
+  border-radius: 38px; overflow: hidden; background: #F4F2FC;
+  position: relative; display: flex; flex-direction: column; height: 700px;
+}
+.dynamic-island {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  width: 96px; height: 30px; background: #1a1a1e; border-radius: 20px; z-index: 20;
+}
+
+/* ── Status bar ── */
+.status-bar {
+  background: #EDE9FB; padding: 50px 22px 6px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; font-weight: 700; color: #6B50D8; flex-shrink: 0;
+}
+.status-right { display: flex; gap: 6px; align-items: center; }
+
+/* ── Nav ── */
+.nav-bar { background: #EDE9FB; padding: 4px 20px 14px; flex-shrink: 0; }
+.nav-title { font-size: 27px; font-weight: 700; color: #220D5C; letter-spacing: -0.5px; }
+.nav-sub { font-size: 13px; color: #8B72E8; margin-top: 2px; }
+.search-row {
+  display: flex; align-items: center; gap: 8px;
+  background: #fff; border-radius: 12px; padding: 9px 14px; margin-top: 10px;
+  border: 1px solid rgba(107,80,216,0.12);
+}
+.search-row input {
+  border: none; background: transparent; font-size: 15px; color: #220D5C;
+  outline: none; flex: 1; font-family: inherit;
+}
+.search-row input::placeholder { color: #C2BAE8; }
+
+/* ── Category pills ── */
+.cat-scroll {
+  background: #EDE9FB; padding: 0 16px 12px;
+  display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0;
+}
+.cat-scroll::-webkit-scrollbar { display: none; }
+.cat-pill {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; cursor: pointer; border: 1.5px solid transparent;
+  transition: all 0.15s; flex-shrink: 0;
+}
+.cat-pill.active { background: #DDD8F8; border-color: #6B50D8; color: #3C2789; }
+.cat-pill:not(.active) { background: #fff; border-color: rgba(107,80,216,0.15); color: #8070B0; }
+
+/* ── Screens ── */
+.screen { flex: 1; overflow-y: auto; scrollbar-width: none; display: none; flex-direction: column; }
+.screen::-webkit-scrollbar { display: none; }
+.screen.active { display: flex; }
+
+/* ── Contact body ── */
+.body-area { flex: 1; overflow-y: auto; padding: 14px 16px; background: #F4F2FC; scrollbar-width: none; }
+.body-area::-webkit-scrollbar { display: none; }
+
+.section-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+  color: #8B72E8; margin: 4px 0 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.section-label::after { content: ''; flex: 1; height: 1px; background: rgba(107,80,216,0.12); }
+
+/* ── SOS cards ── */
+.sos-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.sos-card {
+  flex: 1; background: #6B50D8; border-radius: 18px; padding: 14px 14px 12px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  cursor: pointer; border: none; transition: opacity 0.1s;
+}
+.sos-card:last-child { background: #5040AA; }
+.sos-card:active { opacity: 0.85; }
+.sos-top { display: flex; align-items: center; gap: 7px; width: 100%; }
+.sos-num { font-size: 32px; font-weight: 900; color: #fff; letter-spacing: -1px; }
+.sos-label { font-size: 11px; font-weight: 600; color: #C5BFFE; letter-spacing: 0.4px; }
+.sos-title { font-size: 13px; font-weight: 800; color: #fff; margin-top: 1px; }
+
+/* ── Contact card ── */
+.contact-card {
+  background: #fff; border-radius: 16px; padding: 12px 14px;
+  margin-bottom: 9px; display: flex; align-items: center; gap: 12px;
+  border: 1px solid rgba(107,80,216,0.09); cursor: pointer;
+  transition: transform 0.1s; position: relative;
+}
+.contact-card:active { transform: scale(0.98); }
+.contact-card.pinned { border-color: rgba(107,80,216,0.22); }
+.pin-badge {
+  position: absolute; top: -6px; right: 12px;
+  background: #6B50D8; color: #fff;
+  font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px;
+}
+.avatar {
+  width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0; background: #EDE9FB;
+}
+.c-info { flex: 1; min-width: 0; }
+.c-name { font-size: 14px; font-weight: 600; color: #220D5C; }
+.c-sub { font-size: 12px; color: #8070B0; margin-top: 2px; }
+.c-num { font-size: 18px; font-weight: 800; color: #6B50D8; letter-spacing: -0.3px; }
+.call-btn {
+  background: #DDD8F8; color: #3C2789; border: none; border-radius: 12px;
+  padding: 7px 11px; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.call-btn:active { background: #C5BFFE; }
+
+/* ── Skeleton loader ── */
+.skeleton {
+  background: linear-gradient(90deg, #EDE9FB 25%, #DDD8F8 50%, #EDE9FB 75%);
+  background-size: 200% 100%; animation: shimmer 1.2s infinite;
+  border-radius: 12px;
+}
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.skel-card { height: 70px; margin-bottom: 9px; border-radius: 16px; }
+.skel-sos { height: 96px; flex: 1; border-radius: 18px; }
+
+/* ── Empty / Error state ── */
+.state-box {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 40px 24px; text-align: center; flex: 1;
+}
+.state-box .icon { font-size: 48px; margin-bottom: 12px; }
+.state-box h3 { font-size: 16px; font-weight: 600; color: #8070B0; margin-bottom: 6px; }
+.state-box p { font-size: 13px; color: #C2BAE8; line-height: 1.5; }
+.retry-btn {
+  margin-top: 14px; background: #6B50D8; color: #fff; border: none;
+  border-radius: 12px; padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+/* ── NEARBY screen ── */
+.nearby-screen { flex: 1; display: flex; flex-direction: column; background: #F4F2FC; overflow: hidden; }
+.locate-btn {
+  margin: 14px 16px 0; background: #6B50D8; color: #fff; border: none;
+  border-radius: 14px; padding: 13px; font-size: 15px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  gap: 8px; transition: opacity 0.15s; flex-shrink: 0;
+}
+.locate-btn:active { opacity: 0.85; }
+.locate-btn:disabled { background: #C2BAE8; cursor: not-allowed; }
+.location-badge {
+  margin: 10px 16px 0; background: #EDE9FB; border-radius: 12px; padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.location-badge.hidden { display: none; }
+.loc-dot { width: 10px; height: 10px; border-radius: 50%; background: #6B50D8; flex-shrink: 0; }
+.loc-text { font-size: 13px; color: #3C2789; font-weight: 500; flex: 1; }
+.loc-acc { font-size: 11px; color: #8B72E8; }
+.filter-row {
+  display: flex; gap: 6px; padding: 10px 16px 4px; flex-shrink: 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-chip {
+  padding: 5px 12px; border-radius: 16px; font-size: 12px; font-weight: 600;
+  border: 1.5px solid transparent; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.filter-chip.active { background: #DDD8F8; border-color: #6B50D8; color: #3C2789; }
+.filter-chip:not(.active) { background: #fff; border-color: rgba(107,80,216,0.15); color: #8070B0; }
+.nearby-list { flex: 1; overflow-y: auto; padding: 12px 16px; scrollbar-width: none; }
+.nearby-list::-webkit-scrollbar { display: none; }
+.nearby-card {
+  background: #fff; border-radius: 16px; padding: 13px 14px;
+  margin-bottom: 9px; border: 1px solid rgba(107,80,216,0.09);
+  display: flex; gap: 12px; cursor: pointer; transition: transform 0.1s;
+}
+.nearby-card:active { transform: scale(0.98); }
+.nearby-avatar {
+  width: 46px; height: 46px; border-radius: 14px; background: #EDE9FB;
+  display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0;
+}
+.nearby-info { flex: 1; min-width: 0; }
+.nearby-name { font-size: 14px; font-weight: 600; color: #220D5C; }
+.nearby-addr { font-size: 11px; color: #8070B0; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nearby-dist { font-size: 12px; color: #6B50D8; font-weight: 700; margin-top: 4px; }
+.nearby-actions { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; flex-shrink: 0; }
+.nearby-call { background: #DDD8F8; color: #3C2789; border: none; border-radius: 10px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.nearby-map  { background: #F4F2FC; color: #6B50D8; border: 1px solid rgba(107,80,216,0.2); border-radius: 10px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.spinner-wrap { display: flex; align-items: center; justify-content: center; padding: 32px; flex-direction: column; gap: 10px; }
+.spinner { width: 28px; height: 28px; border: 3px solid #DDD8F8; border-top-color: #6B50D8; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-text { font-size: 13px; color: #8B72E8; font-weight: 500; }
+
+/* ── Recent / Settings screens ── */
+.generic-body { flex: 1; overflow-y: auto; padding: 14px 16px; background: #F4F2FC; scrollbar-width: none; }
+.generic-body::-webkit-scrollbar { display: none; }
+.settings-row {
+  background: #fff; border-radius: 16px; padding: 13px 14px;
+  margin-bottom: 9px; display: flex; align-items: center; gap: 12px;
+  border: 1px solid rgba(107,80,216,0.09);
+}
+.settings-row .s-icon { width: 40px; height: 40px; border-radius: 12px; background: #EDE9FB; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.settings-row .s-info { flex: 1; }
+.settings-row .s-title { font-size: 14px; font-weight: 600; color: #220D5C; }
+.settings-row .s-sub { font-size: 12px; color: #8070B0; margin-top: 2px; }
+.settings-row .s-action { color: #6B50D8; font-size: 13px; font-weight: 600; }
+
+/* ── Tab bar ── */
+.tab-bar {
+  background: #fff; border-top: 1px solid rgba(107,80,216,0.1);
+  padding: 8px 0 20px; display: flex; flex-shrink: 0;
+}
+.tab-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 3px; font-size: 10px; font-weight: 600; cursor: pointer;
+}
+.tab-item.active { color: #6B50D8; }
+.tab-item:not(.active) { color: #C2BAE8; }
+.tab-item svg { width: 22px; height: 22px; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 30px; left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: #220D5C; color: #E8E4FF;
+  padding: 11px 22px; border-radius: 20px;
+  font-size: 13px; font-weight: 500;
+  opacity: 0; transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none; z-index: 999; max-width: 310px; text-align: center;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Emergency Contacts</h1>
+  <p>Purple Theme · เบอร์ฉุกเฉินไทย 2569</p>
+</div>
+
+<!-- Realtime indicator -->
+<div class="rt-pill">
+  <div class="rt-dot" id="rtDot"></div>
+  <span id="rtLabel">กำลังเชื่อมต่อ…</span>
+</div>
+
+<!-- Config warning (shown when Supabase not configured) -->
+<div class="config-banner" id="configBanner">
+  ⚠️ ยังไม่ได้ตั้งค่า Supabase — แก้ไข <code>SUPABASE_URL</code> และ <code>SUPABASE_ANON</code>
+  ในไฟล์ <code>index.html</code> ก่อน deploy<br>
+  <a href="https://supabase.com/dashboard" target="_blank">→ ไปที่ Supabase Dashboard</a>
+</div>
+
+<div class="frame-outer">
+  <div class="frame-inner">
+    <div class="dynamic-island"></div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <span id="clockTime">9:41</span>
+      <div class="status-right">
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="#6B50D8"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0" width="3" height="12" rx="1"/><rect x="13.5" y="1" width="2.5" height="11" rx="1" opacity="0.3"/></svg>
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="#6B50D8" stroke-width="1.5"><path d="M8 3C5.5 3 3.3 4 1.7 5.7L0.5 4.5C2.5 2.5 5.1 1 8 1s5.5 1.5 7.5 3.5l-1.2 1.2C12.7 4 10.5 3 8 3z"/><path d="M8 6.5c-1.4 0-2.7.5-3.7 1.4L3 6.6C4.3 5.3 6 4.5 8 4.5s3.7.8 5 2.1l-1.3 1.3C10.7 7 9.4 6.5 8 6.5z"/><circle cx="8" cy="10" r="1.5" fill="#6B50D8" stroke="none"/></svg>
+        <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke="#6B50D8"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#6B50D8"/><path d="M24 4v4a2 2 0 0 0 0-4z" fill="#6B50D8" opacity="0.4"/></svg>
+      </div>
+    </div>
+
+    <!-- Nav contacts -->
+    <div class="nav-bar" id="navContacts">
+      <div class="nav-title">เบอร์ฉุกเฉิน</div>
+      <div class="search-row">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C2BAE8" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="ค้นหาหมายเลข…" id="searchInput" oninput="filterContacts(this.value)">
+      </div>
+    </div>
+
+    <!-- Nav nearby -->
+    <div class="nav-bar hidden" id="navNearby">
+      <div class="nav-title">ใกล้ฉัน</div>
+      <div class="nav-sub">ค้นหาโรงพยาบาลและสถานีตำรวจ</div>
+    </div>
+
+    <!-- Nav recent -->
+    <div class="nav-bar hidden" id="navRecent">
+      <div class="nav-title">ประวัติโทร</div>
+    </div>
+
+    <!-- Nav settings -->
+    <div class="nav-bar hidden" id="navSettings">
+      <div class="nav-title">ตั้งค่า</div>
+    </div>
+
+    <!-- Category pills (contacts only) -->
+    <div class="cat-scroll" id="catBar">
+      <div class="cat-pill active" data-cat="all">🆘 ทั้งหมด</div>
+      <div class="cat-pill" data-cat="medical">🏥 การแพทย์</div>
+      <div class="cat-pill" data-cat="police">👮 ตำรวจ</div>
+      <div class="cat-pill" data-cat="fire">🔥 ดับเพลิง</div>
+      <div class="cat-pill" data-cat="road">🛣️ การเดินทาง</div>
+      <div class="cat-pill" data-cat="disaster">⛈️ ภัยพิบัติ</div>
+      <div class="cat-pill" data-cat="other">📞 อื่นๆ</div>
+    </div>
+
+    <!-- ══ SCREEN: CONTACTS ══ -->
+    <div class="screen active" id="screenContacts">
+      <div class="body-area" id="bodyArea">
+        <!-- Skeleton shown while loading -->
+        <div id="skeletonState">
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <div class="skeleton skel-sos"></div>
+            <div class="skeleton skel-sos"></div>
+          </div>
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card" style="width:70%"></div>
+          <div class="skeleton skel-card"></div>
+          <div class="skeleton skel-card" style="width:85%"></div>
+        </div>
+        <div id="contactsContent" class="hidden"></div>
+        <div id="errorState" class="hidden">
+          <div class="state-box">
+            <div class="icon">⚠️</div>
+            <h3>ไม่สามารถโหลดข้อมูลได้</h3>
+            <p>ตรวจสอบการเชื่อมต่อหรือการตั้งค่า Supabase</p>
+            <button class="retry-btn" onclick="loadContacts()">ลองใหม่</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SCREEN: NEARBY ══ -->
+    <div class="screen" id="screenNearby">
+      <div class="nearby-screen">
+        <button class="locate-btn" id="locateBtn" onclick="startLocate()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8" stroke-dasharray="3 2"/></svg>
+          ค้นหาจากตำแหน่งปัจจุบัน
+        </button>
+        <div class="location-badge hidden" id="locationBadge">
+          <div class="loc-dot"></div>
+          <div class="loc-text" id="locText">กำลังรับสัญญาณ GPS…</div>
+          <div class="loc-acc" id="locAcc"></div>
+        </div>
+        <div class="filter-row hidden" id="filterRow">
+          <div class="filter-chip active" data-type="all" onclick="filterNearby('all',this)">🏥👮 ทั้งหมด</div>
+          <div class="filter-chip" data-type="hospital" onclick="filterNearby('hospital',this)">🏥 โรงพยาบาล</div>
+          <div class="filter-chip" data-type="police" onclick="filterNearby('police',this)">👮 ตำรวจ</div>
+          <div class="filter-chip" data-type="fire" onclick="filterNearby('fire',this)">🚒 ดับเพลิง</div>
+        </div>
+        <div class="nearby-list" id="nearbyList">
+          <div class="state-box">
+            <div class="icon">📍</div>
+            <h3>ยังไม่ได้เปิด GPS</h3>
+            <p>กดปุ่มด้านบนเพื่อให้แอปเข้าถึงตำแหน่งของคุณ</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SCREEN: RECENT ══ -->
+    <div class="screen" id="screenRecent">
+      <div class="generic-body">
+        <div class="section-label">🕐 ประวัติการโทร</div>
+        <div id="recentList"></div>
+      </div>
+    </div>
+
+    <!-- ══ SCREEN: SETTINGS ══ -->
+    <div class="screen" id="screenSettings">
+      <div class="generic-body">
+        <div class="section-label">⚙️ ทั่วไป</div>
+        <div class="settings-row">
+          <div class="s-icon">🎨</div>
+          <div class="s-info"><div class="s-title">ธีม</div><div class="s-sub">Soft Purple</div></div>
+          <div class="s-action">›</div>
+        </div>
+        <div class="settings-row">
+          <div class="s-icon">🌍</div>
+          <div class="s-info"><div class="s-title">ภาษา</div><div class="s-sub">ภาษาไทย</div></div>
+          <div class="s-action">TH ›</div>
+        </div>
+        <div class="settings-row" onclick="startLocate();switchTab('nearby')">
+          <div class="s-icon">📍</div>
+          <div class="s-info"><div class="s-title">การเข้าถึงตำแหน่ง</div><div class="s-sub" id="gpsStatusText">ยังไม่ได้อนุญาต</div></div>
+          <div class="s-action" id="gpsStatusIcon">เปิด ›</div>
+        </div>
+        <div class="section-label" style="margin-top:10px">🔗 ข้อมูล</div>
+        <div class="settings-row">
+          <div class="s-icon">☁️</div>
+          <div class="s-info"><div class="s-title">แหล่งข้อมูล</div><div class="s-sub" id="supabaseStatus">Supabase Realtime</div></div>
+          <div class="s-action" id="supabaseIcon">●</div>
+        </div>
+        <div class="settings-row" onclick="loadContacts()">
+          <div class="s-icon">🔄</div>
+          <div class="s-info"><div class="s-title">รีเฟรชข้อมูล</div><div class="s-sub" id="lastUpdatedText">—</div></div>
+          <div class="s-action">›</div>
+        </div>
+        <div class="section-label" style="margin-top:10px">🗑️ จัดการ</div>
+        <div class="settings-row" onclick="clearRecent()">
+          <div class="s-icon">🗑️</div>
+          <div class="s-info"><div class="s-title">ล้างประวัติการโทร</div><div class="s-sub">ลบประวัติทั้งหมด</div></div>
+          <div class="s-action" style="color:#E24B4A">ล้าง</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <div class="tab-item active" id="tab-contacts" onclick="switchTab('contacts')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+        <span>Contacts</span>
+      </div>
+      <div class="tab-item" id="tab-nearby" onclick="switchTab('nearby')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        <span>Nearby</span>
+      </div>
+      <div class="tab-item" id="tab-recent" onclick="switchTab('recent')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Recent</span>
+      </div>
+      <div class="tab-item" id="tab-settings" onclick="switchTab('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        <span>Settings</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+//  ⚙️  SUPABASE CONFIG — แก้ไขตรงนี้
+// ══════════════════════════════════════════
+const SUPABASE_URL  = 'https://YOUR_PROJECT_ID.supabase.co';
+const SUPABASE_ANON = 'YOUR_ANON_PUBLIC_KEY';
+// ══════════════════════════════════════════
+
+const CONFIGURED = !SUPABASE_URL.includes('YOUR_PROJECT');
+
+const CATEGORIES = {
+  medical:  { label: 'การแพทย์',   emoji: '🏥' },
+  police:   { label: 'ตำรวจ',      emoji: '👮' },
+  fire:     { label: 'ดับเพลิง',   emoji: '🔥' },
+  road:     { label: 'การเดินทาง', emoji: '🛣️' },
+  disaster: { label: 'ภัยพิบัติ',  emoji: '⛈️' },
+  other:    { label: 'อื่นๆ',      emoji: '📞' },
+};
+
+const AVATAR_BG = {
+  medical: '#FDE8E8', police: '#EDE9FB', fire: '#FFF0E0',
+  road: '#E8F5FB', disaster: '#FFF4E0', other: '#EDE9FB',
+};
+
+// ── Init Supabase ──
+let supabase = null;
+if (CONFIGURED) {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+} else {
+  document.getElementById('configBanner').classList.add('show');
+}
+
+// ── Clock ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockTime').textContent =
+    now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+}
+updateClock();
+setInterval(updateClock, 30000);
+
+// ── State ──
+let allContacts = [];
+let currentCat = 'all';
+let searchQuery = '';
+let recentCalls = JSON.parse(localStorage.getItem('recentCalls') || '[]');
+
+// ══════════════════════════════════════════
+//  LOAD CONTACTS (with offline fallback)
+// ══════════════════════════════════════════
+async function loadContacts() {
+  setRtStatus('connecting');
+  showSkeleton(true);
+
+  if (!CONFIGURED) {
+    // Use bundled fallback data
+    allContacts = FALLBACK_DATA;
+    renderContacts();
+    setRtStatus('offline');
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order');
+
+    if (error) throw error;
+
+    allContacts = data;
+    // Cache for offline
+    localStorage.setItem('contacts_cache', JSON.stringify(data));
+    localStorage.setItem('contacts_cache_time', Date.now());
+
+    renderContacts();
+    setRtStatus('live');
+    document.getElementById('lastUpdatedText').textContent =
+      'อัปเดต ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+  } catch (err) {
+    console.error('Load error:', err);
+    // Try offline cache
+    const cached = localStorage.getItem('contacts_cache');
+    if (cached) {
+      allContacts = JSON.parse(cached);
+      renderContacts();
+      setRtStatus('offline');
+      showToast('⚠️ ใช้ข้อมูลแคช (ไม่มีการเชื่อมต่อ)');
+    } else {
+      allContacts = FALLBACK_DATA;
+      renderContacts();
+      setRtStatus('offline');
+      showToast('⚠️ ใช้ข้อมูลสำรองในตัวแอป');
+    }
+  }
+}
+
+// ── Realtime subscription ──
+function subscribeRealtime() {
+  if (!CONFIGURED || !supabase) return;
+  supabase
+    .channel('contacts-changes')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'contacts' },
+      payload => {
+        console.log('Realtime:', payload.eventType);
+        loadContacts();
+        showToast('🔄 ข้อมูลได้รับการอัปเดตแล้ว');
+      }
+    )
+    .subscribe(status => {
+      if (status === 'SUBSCRIBED') setRtStatus('live');
+      if (status === 'CLOSED') setRtStatus('offline');
+    });
+}
+
+function setRtStatus(state) {
+  const dot = document.getElementById('rtDot');
+  const lbl = document.getElementById('rtLabel');
+  const icon = document.getElementById('supabaseIcon');
+  if (state === 'live') {
+    dot.className = 'rt-dot live';
+    lbl.textContent = 'Realtime · Live';
+    if (icon) { icon.textContent = '●'; icon.style.color = '#34C759'; }
+  } else if (state === 'offline') {
+    dot.className = 'rt-dot';
+    dot.style.background = '#FF9500';
+    lbl.textContent = 'Offline cache';
+    if (icon) { icon.textContent = '●'; icon.style.color = '#FF9500'; }
+  } else {
+    dot.className = 'rt-dot';
+    lbl.textContent = 'กำลังเชื่อมต่อ…';
+  }
+}
+
+// ══════════════════════════════════════════
+//  RENDER CONTACTS
+// ══════════════════════════════════════════
+function renderContacts() {
+  showSkeleton(false);
+  const content = document.getElementById('contactsContent');
+  content.classList.remove('hidden');
+  document.getElementById('errorState').classList.add('hidden');
+
+  // Separate pinned from rest
+  const pinned = allContacts.filter(c => c.is_pinned);
+  const sosItems = pinned.filter(c => ['191','1669'].includes(c.phone));
+  const otherPinned = pinned.filter(c => !['191','1669'].includes(c.phone));
+
+  // Group by category
+  const grouped = {};
+  allContacts.forEach(c => {
+    if (!grouped[c.category]) grouped[c.category] = [];
+    grouped[c.category].push(c);
+  });
+
+  let html = '';
+
+  // SOS row (191 + 1669)
+  if (sosItems.length >= 1) {
+    html += `<div class="sos-row">`;
+    const sos191  = allContacts.find(c => c.phone === '191')  || sosItems[0];
+    const sos1669 = allContacts.find(c => c.phone === '1669') || sosItems[1];
+    if (sos191)  html += buildSosCard(sos191,  false);
+    if (sos1669) html += buildSosCard(sos1669, true);
+    html += `</div>`;
+  }
+
+  // Section per category
+  const catOrder = ['medical','police','fire','road','disaster','other'];
+  catOrder.forEach(cat => {
+    const items = grouped[cat];
+    if (!items || items.length === 0) return;
+    const catInfo = CATEGORIES[cat] || { label: cat, emoji: '📞' };
+    html += `<div class="section-label" data-section="${cat}">${catInfo.emoji} ${catInfo.label}</div>`;
+    items.forEach(c => { html += buildCard(c); });
+  });
+
+  content.innerHTML = html;
+  applyFilter();
+}
+
+function buildSosCard(c, secondary) {
+  const cat = CATEGORIES[c.category] || {};
+  const emoji = cat.emoji || '🆘';
+  return `
+    <button class="sos-card" style="${secondary ? 'background:#5040AA' : ''}"
+      onclick="makeCall('${c.phone}','${escHtml(c.name)}')">
+      <div class="sos-top">
+        <span style="font-size:22px">${emoji}</span>
+        <span class="sos-num">${escHtml(c.phone)}</span>
+      </div>
+      <div>
+        <div class="sos-label">${escHtml(c.description || c.name)}</div>
+        <div class="sos-title">${escHtml(c.name)}</div>
+      </div>
+    </button>`;
+}
+
+function buildCard(c) {
+  const cat = CATEGORIES[c.category] || { emoji: '📞' };
+  const bg  = AVATAR_BG[c.category] || '#EDE9FB';
+  const pin = c.is_pinned ? `<div class="pin-badge">Pinned</div>` : '';
+  return `
+    <div class="contact-card ${c.is_pinned ? 'pinned' : ''}"
+      data-cat="${c.category}" data-search="${escHtml((c.name+c.phone+(c.description||'')).toLowerCase())}"
+      onclick="makeCall('${c.phone}','${escHtml(c.name)}')">
+      ${pin}
+      <div class="avatar" style="background:${bg}">${cat.emoji}</div>
+      <div class="c-info">
+        <div class="c-name">${escHtml(c.name)}</div>
+        <div class="c-sub">${escHtml(c.description || '')}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div class="c-num">${escHtml(c.phone)}</div>
+        <button class="call-btn" onclick="event.stopPropagation();makeCall('${c.phone}','${escHtml(c.name)}')">
+          📞 โทร
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── Filter & search ──
+function applyFilter() {
+  document.querySelectorAll('#contactsContent .contact-card').forEach(card => {
+    const catMatch  = currentCat === 'all' || card.dataset.cat === currentCat;
+    const srchMatch = !searchQuery || (card.dataset.search||'').includes(searchQuery);
+    card.classList.toggle('hidden', !catMatch || !srchMatch);
+  });
+  document.querySelectorAll('#contactsContent .section-label').forEach(lbl => {
+    let next = lbl.nextElementSibling, vis = false;
+    while (next && !next.classList.contains('section-label')) {
+      if (!next.classList.contains('hidden')) vis = true;
+      next = next.nextElementSibling;
+    }
+    lbl.style.display = vis ? '' : 'none';
+  });
+}
+
+document.getElementById('catBar').addEventListener('click', e => {
+  const pill = e.target.closest('.cat-pill'); if (!pill) return;
+  document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  currentCat = pill.dataset.cat;
+  applyFilter();
+});
+
+function filterContacts(q) {
+  searchQuery = q.toLowerCase();
+  applyFilter();
+}
+
+function showSkeleton(show) {
+  document.getElementById('skeletonState').classList.toggle('hidden', !show);
+  if (show) document.getElementById('contactsContent').classList.add('hidden');
+}
+
+// ══════════════════════════════════════════
+//  CALL + RECENT
+// ══════════════════════════════════════════
+function makeCall(num, name) {
+  addRecent(num, name);
+  const a = document.createElement('a');
+  a.href = 'tel:' + num;
+  a.click();
+  showToast('📞 กำลังโทร ' + name + ' · ' + num + '…');
+}
+
+function addRecent(num, name) {
+  recentCalls.unshift({ num, name, time: new Date().toLocaleString('th-TH', { hour:'2-digit', minute:'2-digit', day:'numeric', month:'short' }) });
+  if (recentCalls.length > 30) recentCalls = recentCalls.slice(0, 30);
+  localStorage.setItem('recentCalls', JSON.stringify(recentCalls));
+  renderRecent();
+}
+
+function renderRecent() {
+  const el = document.getElementById('recentList');
+  if (!el) return;
+  if (recentCalls.length === 0) {
+    el.innerHTML = `<div class="state-box"><div class="icon">📵</div><h3>ยังไม่มีประวัติ</h3><p>การโทรจะถูกบันทึกที่นี่</p></div>`;
+    return;
+  }
+  el.innerHTML = recentCalls.map(c => `
+    <div class="contact-card" onclick="makeCall('${c.num}','${escHtml(c.name)}')">
+      <div class="avatar">📞</div>
+      <div class="c-info">
+        <div class="c-name">${escHtml(c.name)}</div>
+        <div class="c-sub">${c.time}</div>
+      </div>
+      <div class="c-num">${escHtml(c.num)}</div>
+    </div>`).join('');
+}
+
+function clearRecent() {
+  recentCalls = [];
+  localStorage.removeItem('recentCalls');
+  renderRecent();
+  showToast('🗑️ ล้างประวัติแล้ว');
+}
+
+// ══════════════════════════════════════════
+//  GPS / NEARBY
+// ══════════════════════════════════════════
+let userLat = null, userLng = null, nearbyData = [], activeType = 'all';
+
+function startLocate() {
+  const btn = document.getElementById('locateBtn');
+  const badge = document.getElementById('locationBadge');
+  btn.disabled = true;
+  btn.innerHTML = '<div style="width:18px;height:18px;border:2.5px solid rgba(255,255,255,0.4);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite"></div> กำลังหาตำแหน่ง…';
+  badge.classList.remove('hidden');
+  document.getElementById('locText').textContent = 'กำลังรับสัญญาณ GPS…';
+  document.getElementById('locAcc').textContent = '';
+
+  if (!navigator.geolocation) { showLocError('อุปกรณ์ไม่รองรับ GPS'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => onGotPosition(pos),
+    err => {
+      const msgs = { 1:'กรุณาอนุญาตการเข้าถึงตำแหน่ง', 2:'ไม่พบสัญญาณ GPS', 3:'หมดเวลา — ลองใหม่' };
+      showLocError(msgs[err.code] || 'ไม่สามารถรับตำแหน่งได้');
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+  );
+}
+
+function showLocError(msg) {
+  const btn = document.getElementById('locateBtn');
+  btn.disabled = false;
+  btn.innerHTML = '📍 ค้นหาจากตำแหน่งปัจจุบัน';
+  document.getElementById('locText').textContent = msg;
+  document.getElementById('locAcc').textContent = '⚠️';
+  showToast('❌ ' + msg);
+}
+
+function onGotPosition(pos) {
+  userLat = pos.coords.latitude;
+  userLng = pos.coords.longitude;
+  const acc = Math.round(pos.coords.accuracy);
+  document.getElementById('locText').textContent = `${userLat.toFixed(4)}°N, ${userLng.toFixed(4)}°E`;
+  document.getElementById('locAcc').textContent = `±${acc}m`;
+  document.getElementById('locateBtn').disabled = false;
+  document.getElementById('locateBtn').innerHTML = '📍 อัปเดตตำแหน่ง';
+  document.getElementById('gpsStatusText').textContent = 'อนุญาตแล้ว';
+  document.getElementById('gpsStatusIcon').textContent = '✓';
+  fetchNearby(userLat, userLng);
+}
+
+function fetchNearby(lat, lng) {
+  document.getElementById('filterRow').classList.remove('hidden');
+  document.getElementById('nearbyList').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"></div><div class="spinner-text">กำลังค้นหาสถานที่ใกล้เคียง…</div></div>';
+
+  const q = `[out:json][timeout:20];(
+    node["amenity"="hospital"](around:5000,${lat},${lng});
+    way["amenity"="hospital"](around:5000,${lat},${lng});
+    node["amenity"="clinic"](around:5000,${lat},${lng});
+    node["amenity"="police"](around:5000,${lat},${lng});
+    way["amenity"="police"](around:5000,${lat},${lng});
+    node["amenity"="fire_station"](around:5000,${lat},${lng});
+    way["amenity"="fire_station"](around:5000,${lat},${lng});
+  );out center tags;`;
+
+  fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    body: 'data=' + encodeURIComponent(q)
+  })
+  .then(r => r.json())
+  .then(data => {
+    nearbyData = data.elements.map(el => {
+      const elLat = el.lat || (el.center && el.center.lat) || 0;
+      const elLng = el.lon || (el.center && el.center.lon) || 0;
+      const tags = el.tags || {};
+      const amenity = tags.amenity || '';
+      let type = 'hospital', icon = '🏥', label = 'โรงพยาบาล';
+      if (amenity === 'police')       { type = 'police'; icon = '👮'; label = 'สถานีตำรวจ'; }
+      else if (amenity === 'fire_station') { type = 'fire'; icon = '🚒'; label = 'สถานีดับเพลิง'; }
+      else if (amenity === 'clinic')  { type = 'hospital'; icon = '🏥'; label = 'คลินิก'; }
+      return {
+        name: tags['name:th'] || tags.name || label,
+        type, icon, label,
+        phone: tags.phone || tags['contact:phone'] || null,
+        addr: tags['addr:street'] || tags['addr:district'] || '',
+        dist: calcDist(lat, lng, elLat, elLng),
+        lat: elLat, lng: elLng
+      };
+    }).sort((a, b) => a.dist - b.dist);
+    renderNearby(nearbyData);
+  })
+  .catch(() => {
+    nearbyData = getMockNearby(lat, lng);
+    renderNearby(nearbyData);
+    showToast('⚠️ ใช้ข้อมูลสำรอง');
+  });
+}
+
+function getMockNearby(lat, lng) {
+  return [
+    { name:'โรงพยาบาลรามาธิบดี',         type:'hospital', icon:'🏥', label:'โรงพยาบาล', phone:'02-201-1000', addr:'ถ.พระราม 6', dist:calcDist(lat,lng,13.7664,100.5299), lat:13.7664, lng:100.5299 },
+    { name:'โรงพยาบาลศิริราช',            type:'hospital', icon:'🏥', label:'โรงพยาบาล', phone:'02-419-7000', addr:'ถ.พรานนก',   dist:calcDist(lat,lng,13.7598,100.4898), lat:13.7598, lng:100.4898 },
+    { name:'สถานีตำรวจนครบาลลุมพินี',     type:'police',   icon:'👮', label:'สถานีตำรวจ', phone:'02-252-7171', addr:'ถ.วิทยุ',   dist:calcDist(lat,lng,13.7221,100.5398), lat:13.7221, lng:100.5398 },
+    { name:'สถานีดับเพลิงบางรัก',         type:'fire',     icon:'🚒', label:'สถานีดับเพลิง', phone:'02-234-8802', addr:'ถ.บางรัก', dist:calcDist(lat,lng,13.7241,100.5160), lat:13.7241, lng:100.5160 },
+  ].sort((a, b) => a.dist - b.dist);
+}
+
+function renderNearby(places) {
+  const list = document.getElementById('nearbyList');
+  const filtered = activeType === 'all' ? places : places.filter(p => p.type === activeType);
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="state-box"><div class="icon">🔍</div><h3>ไม่พบสถานที่</h3><p>ไม่มีในรัศมี 5 กม.</p></div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(p => `
+    <div class="nearby-card">
+      <div class="nearby-avatar">${p.icon}</div>
+      <div class="nearby-info">
+        <div class="nearby-name">${escHtml(p.name)}</div>
+        <div class="nearby-addr">${escHtml(p.addr || p.label)}</div>
+        <div class="nearby-dist">📍 ${fmtDist(p.dist)} · ${p.label}</div>
+      </div>
+      <div class="nearby-actions">
+        ${p.phone ? `<button class="nearby-call" onclick="makeCall('${p.phone.replace(/[^0-9+]/g,'')}','${escHtml(p.name)}')">📞 โทร</button>` : ''}
+        <button class="nearby-map" onclick="window.open('https://maps.google.com/?q=${p.lat},${p.lng}','_blank')">🗺️ แผนที่</button>
+      </div>
+    </div>`).join('');
+}
+
+function filterNearby(type, el) {
+  activeType = type;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderNearby(nearbyData);
+}
+
+function calcDist(lat1, lng1, lat2, lng2) {
+  const R = 6371000, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function fmtDist(m) { return m < 1000 ? Math.round(m)+' ม.' : (m/1000).toFixed(1)+' กม.'; }
+
+// ══════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════
+const TABS = ['contacts','nearby','recent','settings'];
+function switchTab(name) {
+  TABS.forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t === name);
+    document.getElementById('screen'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active', t === name);
+    const nav = document.getElementById('nav'+t.charAt(0).toUpperCase()+t.slice(1));
+    if (nav) nav.classList.toggle('hidden', t !== name);
+  });
+  document.getElementById('catBar').classList.toggle('hidden', name !== 'contacts');
+  if (name === 'recent') renderRecent();
+}
+
+// ══════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ══════════════════════════════════════════
+//  FALLBACK DATA (ใช้เมื่อไม่มี Supabase)
+// ══════════════════════════════════════════
+const FALLBACK_DATA = [
+  { id:1, name:'แจ้งเหตุด่วน / เหตุร้าย',    phone:'191',  category:'police',   description:'ตำรวจ ทั่วประเทศ 24 ชม.',             is_pinned:true,  is_active:true, sort_order:1 },
+  { id:2, name:'เจ็บป่วยฉุกเฉิน ERMT',        phone:'1669', category:'medical',  description:'หน่วยแพทย์ฉุกเฉิน ทั่วประเทศ',        is_pinned:true,  is_active:true, sort_order:2 },
+  { id:3, name:'ไฟไหม้ ดับเพลิง',             phone:'199',  category:'fire',     description:'กองบัญชาการตำรวจดับเพลิง',             is_pinned:false, is_active:true, sort_order:3 },
+  { id:4, name:'ตำรวจท่องเที่ยว',             phone:'1155', category:'police',   description:'Tourist Police ทั่วประเทศ',            is_pinned:true,  is_active:true, sort_order:4 },
+  { id:5, name:'หน่วยแพทย์ฉุกเฉิน กทม.',      phone:'1646', category:'medical',  description:'กรุงเทพมหานคร',                        is_pinned:false, is_active:true, sort_order:5 },
+  { id:6, name:'หน่วยกู้ชีพ',                 phone:'1554', category:'medical',  description:'ทั่วประเทศ',                           is_pinned:false, is_active:true, sort_order:6 },
+  { id:7, name:'แจ้งรถหาย',                   phone:'1192', category:'police',   description:'สำนักงานตำรวจแห่งชาติ',                is_pinned:false, is_active:true, sort_order:7 },
+  { id:8, name:'ตำรวจทางหลวง',                phone:'1193', category:'road',     description:'กรมทางหลวง ทั่วประเทศ',                is_pinned:false, is_active:true, sort_order:8 },
+  { id:9, name:'กรมทางหลวงชนบท',              phone:'1146', category:'road',     description:'ถนนชนบท ทั่วประเทศ',                  is_pinned:false, is_active:true, sort_order:9 },
+  { id:10,name:'สายตรงทางด่วน',               phone:'1543', category:'road',     description:'EXAT ทางพิเศษ กทม.',                  is_pinned:false, is_active:true, sort_order:10 },
+  { id:11,name:'ข้อมูลการจราจร',              phone:'1197', category:'road',     description:'กรมทางหลวง',                          is_pinned:false, is_active:true, sort_order:11 },
+  { id:12,name:'การรถไฟแห่งประเทศไทย',        phone:'1690', category:'road',     description:'สอบถามตาราง',                         is_pinned:false, is_active:true, sort_order:12 },
+  { id:13,name:'ศูนย์เตือนภัยพิบัติแห่งชาติ', phone:'192',  category:'disaster', description:'NDWC น้ำท่วม แผ่นดินไหว',             is_pinned:false, is_active:true, sort_order:13 },
+  { id:14,name:'ศูนย์ปลอดภัยคมนาคม',          phone:'1356', category:'disaster', description:'กระทรวงคมนาคม',                       is_pinned:false, is_active:true, sort_order:14 },
+  { id:15,name:'อุบัติเหตุทางน้ำ',            phone:'1196', category:'fire',     description:'ศูนย์ช่วยเหลือทางทะเล',               is_pinned:false, is_active:true, sort_order:15 },
+  { id:16,name:'ร่วมด้วยช่วยกัน',             phone:'1677', category:'other',    description:'ช่วยเหลือผู้ประสบภัยบนท้องถนน',       is_pinned:false, is_active:true, sort_order:16 },
+];
+
+// ══════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════
+loadContacts();
+subscribeRealtime();
+renderRecent();
+</script>
+
+<!-- Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW:', e));
+  });
+}
+</script>
+</body>
+</html>
